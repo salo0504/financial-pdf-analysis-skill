@@ -1,1 +1,72 @@
-1.0.0
+#!/usr/bin/env python3
+"""
+check_update.py — Compares this skill's bundled version against the
+canonical version published on GitHub, and prints a short notice if a
+newer one is available. Never blocks the actual task: any network or
+parsing failure is swallowed and treated as "up to date, move on."
+
+This does NOT auto-download or auto-replace anything. It only prints a
+message with a link. A human decides whether to grab the update and
+re-upload it to their Skills list.
+
+Usage:
+    python3 check_update.py <repo_raw_base_url> <local_version_file>
+
+Example:
+    python3 check_update.py \\
+        https://raw.githubusercontent.com/ORG/REPO/main \\
+        /path/to/financial-pdf-analysis/VERSION
+
+Expects the repo to have a plain-text file at <repo_raw_base_url>/VERSION
+containing just a version string like "1.2.0", and a GitHub Releases
+page at https://github.com/ORG/REPO/releases for humans to download from.
+"""
+import sys
+import urllib.request
+
+
+def parse_version(v):
+    try:
+        return tuple(int(x) for x in v.strip().split("."))
+    except Exception:
+        return None
+
+
+def check(repo_raw_base_url, local_version_path):
+    try:
+        with open(local_version_path) as f:
+            local_version = f.read().strip()
+    except Exception:
+        # No local version file — nothing to compare against, skip quietly.
+        return
+
+    try:
+        url = repo_raw_base_url.rstrip("/") + "/VERSION"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            remote_version = resp.read().decode().strip()
+    except Exception:
+        # Network unavailable, domain not allowlisted for this account,
+        # repo unreachable, etc. — skip quietly, never block the task.
+        return
+
+    local_t = parse_version(local_version)
+    remote_t = parse_version(remote_version)
+
+    if local_t is None or remote_t is None:
+        return
+
+    if remote_t > local_t:
+        repo_url = repo_raw_base_url.replace(
+            "raw.githubusercontent.com", "github.com"
+        ).rsplit("/", 1)[0]  # drop the branch segment, e.g. /main
+        print(
+            f"\n[financial-pdf-analysis skill: update available — "
+            f"you're on v{local_version}, v{remote_version} is out. "
+            f"Get it from {repo_url}/releases]\n"
+        )
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        sys.exit(0)  # fail quietly on misuse too — never break the task
+    check(sys.argv[1], sys.argv[2])
